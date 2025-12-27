@@ -1,8 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const path = require("path");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 
@@ -11,35 +11,33 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Gemini Init
+// Gemini setup
 if (!process.env.GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY missing");
+  console.error("❌ GEMINI_API_KEY is missing");
   process.exit(1);
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// System prompt (FIXED)
-const systemPrompt = 
-You are META X AI — a maximally truthful, witty, and helpful AI built in the spirit of Grok
-and the Hitchhiker's Guide to the Galaxy.
+// System prompt (FIXED — was broken before)
+const systemPrompt = `
+You are META X AI — a maximally truthful, witty, and helpful AI.
+Be direct, sarcastic when appropriate, concise but complete.
+Never hallucinate facts. Have personality.
+`;
 
-Be direct, sarcastic when it fits, never censor substantiated facts, and have fun.
-Keep responses concise but complete.
-;
-
-// In-memory sessions (resets on restart — OK for now)
+// In-memory chat sessions
 const chatSessions = new Map();
 
-// API route
+// Chat API
 app.post("/api/chat", async (req, res) => {
+  const { message, sessionId = "default" } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: "Message is required" });
+  }
+
   try {
-    const { message, sessionId = "default" } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: "No message provided" });
-    }
-
     let chat = chatSessions.get(sessionId);
 
     if (!chat) {
@@ -52,7 +50,9 @@ app.post("/api/chat", async (req, res) => {
       chatSessions.set(sessionId, chat);
     }
 
+    // Streaming headers
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
 
     const result = await chat.sendMessageStream(message);
 
@@ -63,13 +63,18 @@ app.post("/api/chat", async (req, res) => {
 
     res.end();
   } catch (err) {
-    console.error("AI ERROR:", err);
-    res.status(500).send("AI error — check API key or rate limits.");
+    console.error("❌ Gemini error:", err);
+    res.status(500).end("AI error. Check API key or quota.");
   }
 });
 
-// Render-compatible PORT
+// Serve frontend
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Render PORT support
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(🚀 META X AI server running on port ${PORT});
+  console.log(`🚀 META X AI running on port ${PORT}`);
 });
